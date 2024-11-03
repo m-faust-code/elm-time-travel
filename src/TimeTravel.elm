@@ -16,6 +16,7 @@ initialStateWithTimeTravel rawGame =
     { rawModel = rawGame.initialState
     , paused = False
     , history = []
+    , historyPlaybackPosition = 0
     }
 
 viewWithTimeTravel rawGame computer model =
@@ -37,6 +38,7 @@ viewWithTimeTravel rawGame computer model =
         (rawGame.view computer model.rawModel) ++
             [ historyBar black 0.3 maxVisibleHistory
             , historyBar (rgb 0 0 255) 0.6 (List.length model.history)
+            , historyBar (rgb 0 255 0) 0.6 model.historyPlaybackPosition
             , words white helpMessage
                 |> move 0 (computer.screen.top - controlBarHeight / 2)    
             ]
@@ -49,11 +51,33 @@ updateWithTimeTravel rawGame computer model =
                 False
             else
                 model.paused
+        newHistory =  if keyPressed "R" computer then
+                List.take model.historyPlaybackPosition model.history
+            else if model.paused then
+                model.history
+            else
+                model.history ++ [computer]
     in
-    if not model.paused then
-        {model | rawModel = rawGame.updateState computer model.rawModel, paused = newPaused, history = model.history ++ [computer]}
+    if model.paused && computer.mouse.down then
+        let
+            newPlaybackPosition = min (mousePosToHistoryIndex computer) (List.length model.history)
+            replayHistory pastInputs =
+                List.foldl rawGame.updateState rawGame.initialState pastInputs
+        in
+        {model 
+        | historyPlaybackPosition = newPlaybackPosition
+        , rawModel = replayHistory (List.take newPlaybackPosition model.history)
+        }
+    else if model.paused then
+        {model | paused = newPaused, history = newHistory}
     else
-        {model | paused = newPaused}
+        { model 
+        | rawModel = rawGame.updateState computer model.rawModel
+        , paused = newPaused
+        , history = newHistory
+        , historyPlaybackPosition = List.length model.history + 1
+        }
+
 
 keyPressed keyName computer =
     [ String.toLower keyName
@@ -63,3 +87,8 @@ keyPressed keyName computer =
 
 historyIndexToX computer index =
     (toFloat index) / maxVisibleHistory * computer.screen.width
+
+mousePosToHistoryIndex computer =
+    (computer.mouse.x - computer.screen.left)
+        / computer.screen.width * maxVisibleHistory
+    |> round
